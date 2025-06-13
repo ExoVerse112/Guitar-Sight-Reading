@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Fretboard Note Quiz</title>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f4f4f4; margin: 0; padding: 20px; }
+    canvas { margin: 20px auto; display: block; }
+    #fretboard-container { position: relative; width: 650px; margin: 20px auto; }
+    #fretboard-image { width: 100%; display: block; }
+    .click-zone { position: absolute; width: 50px; height: 40px; cursor: pointer; }
+    .correct { background-color: rgba(100, 255, 100, 0.4); }
+    .incorrect { background-color: rgba(255, 100, 100, 0.4); }
+    #feedback { font-size: 1.2em; margin-top: 10px; }
+    label { display: inline-block; margin-top: 10px; font-size: 16px; }
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/vexflow@1.2.93/releases/vexflow-min.js"></script>
+</head>
+<body>
+
+<h2>Click the correct fret for the note shown below</h2>
+
+<div style="margin-bottom: 10px;">
+  <label>
+    Note Range:
+    <select id="lowNote"></select>
+    to
+    <select id="highNote"></select>
+  </label>
+</div>
+
+<label>
+  <input type="checkbox" id="accidentalToggle" />
+  Remove accidentals (♯)
+</label>
+
+<div style="margin-top: 15px;">
+  <button id="startBtn">Start</button>
+  <button id="stopBtn" disabled>Stop</button>
+</div>
+
+<p id="scoreDisplay">Score: 0</p>
+<p id="timerDisplay">Time: 0.0 s</p>
+
+<canvas id="staff" width="300" height="220"></canvas>
+
+<div id="fretboard-container">
+  <img src="https://i.imgur.com/oZFn26i.png" id="fretboard-image" alt="Fretboard Image" />
+</div>
+
+<p id="feedback"></p>
+
+<script>
+  const VF = Vex.Flow;
+  const stringNotes = ["E4", "B3", "G3", "D3", "A2", "E2"];
+  const notesMap = {};
+  const fretboardContainer = document.getElementById("fretboard-container");
+  let currentNote = "";
+  let isGameRunning = false;
+  let score = 0;
+  let timerInterval = null;
+  let elapsedTime = 0;
+
+  function noteToMidi(note) {
+    const map = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
+    const [_, pitch, octave] = note.match(/^([A-G]#?)(\d)$/);
+    return map[pitch] + (parseInt(octave) + 1) * 12;
+  }
+
+  function midiToNote(midi) {
+    const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+    return notes[midi % 12] + "/" + (Math.floor(midi / 12) - 1);
+  }
+
+  function isNatural(noteName) {
+    return !noteName.includes("#") && !noteName.includes("b");
+  }
+
+  function buildNotesMap() {
+    for (let string = 0; string < 6; string++) {
+      const openMidi = noteToMidi(stringNotes[string]);
+      for (let fret = 0; fret <= 12; fret++) {
+        const midi = openMidi + fret + 12; // +12 to raise octave
+        if (midi >= 40 && midi <= 100) {
+          notesMap[`${string}-${fret}`] = midiToNote(midi);
+        }
+      }
+    }
+  }
+
+    function generateNoteOptions() {
+      const allNotes = [];
+      for (let midi = 28 + 12; midi <= 108 + 12; midi++) { // shift by +12 for guitar
+        allNotes.push(midiToNote(midi));
+      }
+    
+      const lowSelect = document.getElementById("lowNote");
+      const highSelect = document.getElementById("highNote");
+    
+      allNotes.forEach(note => {
+        const opt1 = new Option(note, note);
+        const opt2 = new Option(note, note);
+        lowSelect.appendChild(opt1);
+        highSelect.appendChild(opt2);
+      });
+    
+      lowSelect.value = "E3";  // shifted default
+      highSelect.value = "G7"; // shifted default
+    }
+
+  function noteToFrequency(note) {
+    const noteFreqMap = {
+      'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
+      'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
+    };
+
+    const match = note.match(/^([A-G]#?)(\d)$/);
+    if (!match) return 440;
+
+    const pitch = match[1];
+    const octave = parseInt(match[2]);
+    const semitoneIndex = noteFreqMap[pitch];
+    const midiNumber = semitoneIndex + (octave + 1) * 12;
+    return 440 * Math.pow(2, (midiNumber - 69) / 12);
+  }
+
+  function playNoteSound(note) {
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const freq = noteToFrequency(note.replace("/", ""));
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    gain.gain.setValueAtTime(1, audioCtx.currentTime);
+    osc.start();
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+    osc.stop(audioCtx.currentTime + 0.5);
+  }
+
+  function drawNote() {
+    const removeAccidentals = document.getElementById("accidentalToggle").checked;
+    const allNotes = Object.values(notesMap);
+
+    const lowNote = document.getElementById("lowNote").value.replace("/", "");
+    const highNote = document.getElementById("highNote").value.replace("/", "");
+    const lowMidi = noteToMidi(lowNote) - 12;
+    const highMidi = noteToMidi(highNote) - 12;
+
+    let filteredNotes = allNotes.filter(n => {
+      const midi = noteToMidi(n.replace("/", ""));
+      return midi >= lowMidi && midi <= highMidi;
+    });
+
+    if (removeAccidentals) {
+      filteredNotes = filteredNotes.filter(n => isNatural(n.split("/")[0]));
+    }
+
+    currentNote = filteredNotes[Math.floor(Math.random() * filteredNotes.length)];
+
+    const canvas = document.getElementById("staff");
+    const ctx = canvas.getContext("2d");
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.CANVAS);
+    const stave = new VF.Stave(10, 70, 280);
+    stave.addClef("treble").setContext(ctx).draw();
+
+    const staveNote = new VF.StaveNote({ clef: "treble", keys: [currentNote], duration: "q" });
+    if (currentNote.includes("#")) {
+      staveNote.addAccidental(0, new VF.Accidental("#"));
+    }
+    VF.Formatter.FormatAndDraw(ctx, stave, [staveNote]);
+
+    createClickZones();
+  }
+
+  function createClickZones() {
+    fretboardContainer.querySelectorAll(".click-zone").forEach(zone => zone.remove());
+    const fretWidth = 50;
+    const stringHeight = 40;
+
+    for (let string = 0; string < 6; string++) {
+      for (let fret = 0; fret <= 12; fret++) {
+        if (!notesMap.hasOwnProperty(`${string}-${fret}`)) continue;
+
+        const div = document.createElement("div");
+        div.className = "click-zone";
+        div.style.left = `${fret * fretWidth}px`;
+        div.style.top = `${string * stringHeight}px`;
+        div.style.width = `${fretWidth}px`;
+        div.style.height = `${stringHeight}px`;
+        div.dataset.string = string;
+        div.dataset.fret = fret;
+        div.onclick = handleClick;
+        div.style.pointerEvents = isGameRunning ? 'auto' : 'none';
+        fretboardContainer.appendChild(div);
+      }
+    }
+  }
+
+  function handleClick(e) {
+    if (!isGameRunning) return;
+
+    const { string, fret } = e.target.dataset;
+    const clickedNote = notesMap[`${string}-${fret}`];
+    const isCorrect = clickedNote === currentNote;
+
+    e.target.classList.add(isCorrect ? "correct" : "incorrect");
+
+    if (isCorrect) {
+      score++;
+      document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
+      playNoteSound(currentNote);
+      setTimeout(() => {
+        drawNote();
+        createClickZones();
+      }, 60);
+    } else {
+      document.getElementById("feedback").innerHTML =
+        `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${currentNote}</strong>`;
+      endGame();
+    }
+  }
+
+  function startGame() {
+    score = 0;
+    elapsedTime = 0;
+    isGameRunning = true;
+    document.getElementById("feedback").textContent = "";
+    document.getElementById("scoreDisplay").textContent = "Score: 0";
+    document.getElementById("timerDisplay").textContent = "Time: 0.0 s";
+    document.getElementById("startBtn").disabled = true;
+    document.getElementById("stopBtn").disabled = false;
+    drawNote();
+
+    timerInterval = setInterval(() => {
+      elapsedTime += 0.1;
+      document.getElementById("timerDisplay").textContent = `Time: ${elapsedTime.toFixed(1)} s`;
+    }, 100);
+  }
+
+  function endGame() {
+    isGameRunning = false;
+    document.getElementById("startBtn").disabled = false;
+    document.getElementById("stopBtn").disabled = true;
+    createClickZones();
+    clearInterval(timerInterval);
+  }
+
+  document.getElementById("accidentalToggle").addEventListener("change", drawNote);
+  document.getElementById("lowNote").addEventListener("change", drawNote);
+  document.getElementById("highNote").addEventListener("change", drawNote);
+  document.getElementById("startBtn").addEventListener("click", startGame);
+  document.getElementById("stopBtn").addEventListener("click", endGame);
+
+  buildNotesMap();
+  generateNoteOptions();
+  drawNote();
+  createClickZones();
+</script>
+
+</body>
+</html>
