@@ -145,8 +145,8 @@
 
     const lowNote = document.getElementById("lowNote").value.replace("/", "");
     const highNote = document.getElementById("highNote").value.replace("/", "");
-    const lowMidi = noteToMidi(lowNote) - 12;
-    const highMidi = noteToMidi(highNote) - 12;
+    const lowMidi = noteToMidi(lowNote);  // removed -12
+    const highMidi = noteToMidi(highNote); // removed -12
 
     let filteredNotes = allNotes.filter(n => {
       const midi = noteToMidi(n.replace("/", ""));
