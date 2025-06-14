@@ -13,12 +13,15 @@
     .incorrect { background-color: rgba(255, 100, 100, 0.4); }
     #feedback { font-size: 1.2em; margin-top: 10px; }
     label { display: inline-block; margin-top: 10px; font-size: 16px; }
+    .challenge-mode-only { display: none; }
+    .challenge-mode .challenge-mode-only { display: block; }
+    .challenge-mode .challenge-mode-inline { display: inline-block; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/vexflow@1.2.93/releases/vexflow-min.js"></script>
 </head>
 <body>
 
-<h2>Click the correct fret for the note shown below</h2>
+<h2>Guitar Sight Reading Trainer 💪</h2>
 
 <div style="margin-bottom: 10px;">
   <label>
@@ -29,18 +32,27 @@
   </label>
 </div>
 
-<label>
-  <input type="checkbox" id="accidentalToggle" />
-  Remove accidentals (♯)
-</label>
-
-<div style="margin-top: 15px;">
-  <button id="startBtn">Start</button>
-  <button id="stopBtn" disabled>Stop</button>
+<div>
+  <label>
+    <input type="checkbox" id="accidentalToggle" />
+    Remove accidentals (♯)
+  </label>
+  
+  <label style="margin-left: 20px;">
+    <input type="checkbox" id="challengeModeToggle" />
+    Challenge Mode
+  </label>
 </div>
 
-<p id="scoreDisplay">Score: 0</p>
-<p id="timerDisplay">Time: 0.0 s</p>
+<div id="challengeControls" class="challenge-mode-only">
+  <div style="margin-top: 15px;">
+    <button id="startBtn">Start</button>
+    <button id="stopBtn" disabled>Stop</button>
+  </div>
+
+  <p id="scoreDisplay" class="challenge-mode-only">Score: 0</p>
+  <p id="timerDisplay" class="challenge-mode-only">Time: 0.0 s</p>
+</div>
 
 <canvas id="staff" width="300" height="220"></canvas>
 
@@ -63,13 +75,16 @@
 
   function noteToMidi(note) {
     const map = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
-    const [_, pitch, octave] = note.match(/^([A-G]#?)(\d)$/);
-    return map[pitch] + (parseInt(octave) + 1) * 12;
+    const match = note.match(/^([A-G]#?)(\d)$/);
+    if (!match) return null;
+    const pitch = match[1];
+    const octave = parseInt(match[2]);
+    return map[pitch] + (octave + 1) * 12;
   }
 
   function midiToNote(midi) {
     const notes = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
-    return notes[midi % 12] + "/" + (Math.floor(midi / 12) - 1);
+    return notes[midi % 12] + (Math.floor(midi / 12) - 1);
   }
 
   function isNatural(noteName) {
@@ -80,53 +95,41 @@
     for (let string = 0; string < 6; string++) {
       const openMidi = noteToMidi(stringNotes[string]);
       for (let fret = 0; fret <= 12; fret++) {
-        const midi = openMidi + fret + 12; // +12 to raise octave
-        if (midi >= 40 && midi <= 100) {
-          notesMap[`${string}-${fret}`] = midiToNote(midi);
-        }
+        const midi = openMidi + fret;
+        notesMap[`${string}-${fret}`] = midiToNote(midi);
       }
     }
   }
 
-    function generateNoteOptions() {
-      const allNotes = [];
-      for (let midi = 28 + 12; midi <= 108 + 12; midi++) { // shift by +12 for guitar
-        allNotes.push(midiToNote(midi));
-      }
-    
-      const lowSelect = document.getElementById("lowNote");
-      const highSelect = document.getElementById("highNote");
-    
-      allNotes.forEach(note => {
-        const opt1 = new Option(note, note);
-        const opt2 = new Option(note, note);
-        lowSelect.appendChild(opt1);
-        highSelect.appendChild(opt2);
-      });
-    
-      lowSelect.value = "E3";  // shifted default
-      highSelect.value = "G7"; // shifted default
+  function generateNoteOptions() {
+    const lowSelect = document.getElementById("lowNote");
+    const highSelect = document.getElementById("highNote");
+
+    for (let midi = noteToMidi("E2"); midi <= noteToMidi("E5"); midi++) {
+      const noteName = midiToNote(midi);
+      const optLow = new Option(noteName, midi);
+      const optHigh = new Option(noteName, midi);
+      lowSelect.appendChild(optLow);
+      highSelect.appendChild(optHigh);
     }
 
-  function noteToFrequency(note) {
-    const noteFreqMap = {
-      'C': 0, 'C#': 1, 'D': 2, 'D#': 3, 'E': 4, 'F': 5,
-      'F#': 6, 'G': 7, 'G#': 8, 'A': 9, 'A#': 10, 'B': 11
-    };
+    lowSelect.value = noteToMidi("E2");
+    highSelect.value = noteToMidi("E5");
+  }
 
+  function noteToFrequency(note) {
+    const map = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
     const match = note.match(/^([A-G]#?)(\d)$/);
     if (!match) return 440;
-
     const pitch = match[1];
     const octave = parseInt(match[2]);
-    const semitoneIndex = noteFreqMap[pitch];
-    const midiNumber = semitoneIndex + (octave + 1) * 12;
+    const midiNumber = map[pitch] + (octave + 1) * 12;
     return 440 * Math.pow(2, (midiNumber - 69) / 12);
   }
 
   function playNoteSound(note) {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const freq = noteToFrequency(note.replace("/", ""));
+    const freq = noteToFrequency(note);
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'sine';
@@ -143,18 +146,21 @@
     const removeAccidentals = document.getElementById("accidentalToggle").checked;
     const allNotes = Object.values(notesMap);
 
-    const lowNote = document.getElementById("lowNote").value.replace("/", "");
-    const highNote = document.getElementById("highNote").value.replace("/", "");
-    const lowMidi = noteToMidi(lowNote);  // removed -12
-    const highMidi = noteToMidi(highNote); // removed -12
+    const lowMidi = parseInt(document.getElementById("lowNote").value);
+    const highMidi = parseInt(document.getElementById("highNote").value);
 
     let filteredNotes = allNotes.filter(n => {
-      const midi = noteToMidi(n.replace("/", ""));
+      const midi = noteToMidi(n);
       return midi >= lowMidi && midi <= highMidi;
     });
 
     if (removeAccidentals) {
-      filteredNotes = filteredNotes.filter(n => isNatural(n.split("/")[0]));
+      filteredNotes = filteredNotes.filter(n => isNatural(n));
+    }
+
+    if (filteredNotes.length === 0) {
+      document.getElementById("feedback").textContent = "No notes available in this range!";
+      return;
     }
 
     currentNote = filteredNotes[Math.floor(Math.random() * filteredNotes.length)];
@@ -167,8 +173,15 @@
     const stave = new VF.Stave(10, 70, 280);
     stave.addClef("treble").setContext(ctx).draw();
 
-    const staveNote = new VF.StaveNote({ clef: "treble", keys: [currentNote], duration: "q" });
-    if (currentNote.includes("#")) {
+    const midi = noteToMidi(currentNote) + 12;
+    const noteName = midiToNote(midi);
+    const staveNote = new VF.StaveNote({
+      clef: "treble",
+      keys: [noteName.toLowerCase().replace(/[0-9]/g, '') + "/" + noteName.match(/\d/)[0]],
+      duration: "q"
+    });
+
+    if (noteName.includes("#")) {
       staveNote.addAccidental(0, new VF.Accidental("#"));
     }
     VF.Formatter.FormatAndDraw(ctx, stave, [staveNote]);
@@ -184,7 +197,6 @@
     for (let string = 0; string < 6; string++) {
       for (let fret = 0; fret <= 12; fret++) {
         if (!notesMap.hasOwnProperty(`${string}-${fret}`)) continue;
-
         const div = document.createElement("div");
         div.className = "click-zone";
         div.style.left = `${fret * fretWidth}px`;
@@ -194,24 +206,29 @@
         div.dataset.string = string;
         div.dataset.fret = fret;
         div.onclick = handleClick;
-        div.style.pointerEvents = isGameRunning ? 'auto' : 'none';
+        
+        // Enable clicking only if in challenge mode and game is running, or not in challenge mode
+        const isChallengeMode = document.getElementById("challengeModeToggle").checked;
+        div.style.pointerEvents = (isChallengeMode && !isGameRunning) ? 'none' : 'auto';
+        
         fretboardContainer.appendChild(div);
       }
     }
   }
 
   function handleClick(e) {
-    if (!isGameRunning) return;
-
     const { string, fret } = e.target.dataset;
     const clickedNote = notesMap[`${string}-${fret}`];
     const isCorrect = clickedNote === currentNote;
+    const isChallengeMode = document.getElementById("challengeModeToggle").checked;
 
     e.target.classList.add(isCorrect ? "correct" : "incorrect");
 
     if (isCorrect) {
-      score++;
-      document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
+      if (isChallengeMode) {
+        score++;
+        document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
+      }
       playNoteSound(currentNote);
       setTimeout(() => {
         drawNote();
@@ -220,7 +237,9 @@
     } else {
       document.getElementById("feedback").innerHTML =
         `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${currentNote}</strong>`;
-      endGame();
+      if (isChallengeMode) {
+        endGame();
+      }
     }
   }
 
@@ -234,7 +253,6 @@
     document.getElementById("startBtn").disabled = true;
     document.getElementById("stopBtn").disabled = false;
     drawNote();
-
     timerInterval = setInterval(() => {
       elapsedTime += 0.1;
       document.getElementById("timerDisplay").textContent = `Time: ${elapsedTime.toFixed(1)} s`;
@@ -249,9 +267,32 @@
     clearInterval(timerInterval);
   }
 
+  function toggleChallengeMode() {
+    const isChallengeMode = document.getElementById("challengeModeToggle").checked;
+    document.body.classList.toggle("challenge-mode", isChallengeMode);
+    
+    if (!isChallengeMode) {
+      // Reset game state when turning off challenge mode
+      isGameRunning = false;
+      clearInterval(timerInterval);
+      document.getElementById("feedback").textContent = "";
+      createClickZones();
+    } else {
+      // Reset score and timer when turning on challenge mode
+      score = 0;
+      elapsedTime = 0;
+      document.getElementById("scoreDisplay").textContent = "Score: 0";
+      document.getElementById("timerDisplay").textContent = "Time: 0.0 s";
+    }
+    
+    // Always draw a new note when toggling modes
+    drawNote();
+  }
+
   document.getElementById("accidentalToggle").addEventListener("change", drawNote);
   document.getElementById("lowNote").addEventListener("change", drawNote);
   document.getElementById("highNote").addEventListener("change", drawNote);
+  document.getElementById("challengeModeToggle").addEventListener("change", toggleChallengeMode);
   document.getElementById("startBtn").addEventListener("click", startGame);
   document.getElementById("stopBtn").addEventListener("click", endGame);
 
