@@ -18,6 +18,8 @@
     .challenge-mode .challenge-mode-inline { display: inline-block; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/vexflow@1.2.93/releases/vexflow-min.js"></script>
+  <!-- Soundfont‑Player for realistic guitar samples -->
+  <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
 </head>
 <body>
 
@@ -73,6 +75,16 @@
   let timerInterval = null;
   let elapsedTime = 0;
 
+  /* ----------------------------------------------------
+   * REALISTIC GUITAR SOUNDFONT SETUP
+   * --------------------------------------------------*/
+  const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let guitarInstrument = null;
+  // Load once; the promise resolves when samples are ready
+  Soundfont.instrument(audioCtx, 'acoustic_guitar_nylon').then(function(inst) {
+    guitarInstrument = inst;
+  }).catch(console.error);
+
   function noteToMidi(note) {
     const map = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
     const match = note.match(/^([A-G]#?)(\d)$/);
@@ -127,20 +139,41 @@
     return 440 * Math.pow(2, (midiNumber - 69) / 12);
   }
 
-  function playNoteSound(note) {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const freq = noteToFrequency(note);
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    gain.gain.setValueAtTime(1, audioCtx.currentTime);
-    osc.start();
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
-    osc.stop(audioCtx.currentTime + 0.5);
-  }
+  // Plays a realistic guitar pluck if the soundfont has loaded; otherwise falls back to sine tone
+    function playNoteSound(note) {
+      if (guitarInstrument) {
+        const now = audioCtx.currentTime;
+        const duration = 1.0;
+        const audioNode = guitarInstrument.play(note, now, { gain: 1 });
+    
+        // Schedule manual fade-out
+        const gainNode = audioNode.output && audioNode.output.gain ? audioNode.output : null;
+        if (gainNode && gainNode.gain) {
+          gainNode.gain.setValueAtTime(1, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
+        }
+    
+        // Optional hard stop fallback
+        setTimeout(() => {
+          if (audioNode && typeof audioNode.stop === 'function') {
+            audioNode.stop();
+          }
+        }, duration * 400);
+      } else {
+        // fallback sine tone
+        const freq = noteToFrequency(note);
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        gain.gain.setValueAtTime(1, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.0);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 1.0);
+      }
+    }
 
   function drawNote() {
     const removeAccidentals = document.getElementById("accidentalToggle").checked;
@@ -173,7 +206,7 @@
     const stave = new VF.Stave(10, 70, 280);
     stave.addClef("treble").setContext(ctx).draw();
 
-    const midi = noteToMidi(currentNote) + 12;
+    const midi = noteToMidi(currentNote) + 12; // shift octave for notation clarity
     const noteName = midiToNote(midi);
     const staveNote = new VF.StaveNote({
       clef: "treble",
@@ -216,34 +249,34 @@
     }
   }
 
-    function handleClick(e) {
-        const { string, fret } = e.target.dataset;
-        const clickedNote = notesMap[`${string}-${fret}`];
-        const isCorrect = clickedNote === currentNote;
-        const isChallengeMode = document.getElementById("challengeModeToggle").checked;
-    
-        e.target.classList.add(isCorrect ? "correct" : "incorrect");
-    
-        if (isCorrect) {
-            if (isChallengeMode) {
-                score++;
-                document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
-            }
-            playNoteSound(currentNote);
-            setTimeout(() => {
-                drawNote();
-                createClickZones();
-            }, 60);
-        } else {
-            if (isChallengeMode) {
-                document.getElementById("feedback").innerHTML =
-                    `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${currentNote}</strong>`;
-                endGame();
-            } else {
-                document.getElementById("feedback").textContent = "";
-            }
-        }
+  function handleClick(e) {
+    const { string, fret } = e.target.dataset;
+    const clickedNote = notesMap[`${string}-${fret}`];
+    const isCorrect = clickedNote === currentNote;
+    const isChallengeMode = document.getElementById("challengeModeToggle").checked;
+
+    e.target.classList.add(isCorrect ? "correct" : "incorrect");
+
+    if (isCorrect) {
+      if (isChallengeMode) {
+        score++;
+        document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
+      }
+      playNoteSound(currentNote);
+      setTimeout(() => {
+        drawNote();
+        createClickZones();
+      }, 60);
+    } else {
+      if (isChallengeMode) {
+        document.getElementById("feedback").innerHTML =
+          `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${currentNote}</strong>`;
+        endGame();
+      } else {
+        document.getElementById("feedback").textContent = "";
+      }
     }
+  }
 
   function startGame() {
     score = 0;
@@ -286,8 +319,6 @@
       document.getElementById("scoreDisplay").textContent = "Score: 0";
       document.getElementById("timerDisplay").textContent = "Time: 0.0 s";
     }
-    
-    // Always draw a new note when toggling modes
     drawNote();
   }
 
