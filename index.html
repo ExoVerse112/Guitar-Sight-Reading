@@ -6,16 +6,196 @@
   <style>
     body { font-family: sans-serif; text-align: center; background: #f4f4f4; margin: 0; padding: 20px; }
     canvas { margin: 20px auto; display: block; }
-    #fretboard-container { position: relative; width: 650px; margin: 20px auto; }
-    #fretboard-image { width: 100%; display: block; }
-    .click-zone { position: absolute; width: 50px; height: 40px; cursor: pointer; }
-    .correct { background-color: rgba(100, 255, 100, 0.4); }
-    .incorrect { background-color: rgba(255, 100, 100, 0.4); }
-    #feedback { font-size: 1.2em; margin-top: 10px; }
-    label { display: inline-block; margin-top: 10px; font-size: 16px; }
-    .challenge-mode-only { display: none; }
-    .challenge-mode .challenge-mode-only { display: block; }
-    .challenge-mode .challenge-mode-inline { display: inline-block; }
+
+    /* Fretboard Container */
+    #fretboard-container {
+      position: relative;
+      width: 650px; /* 13 frets * 50px */
+      height: 240px; /* 6 strings * 40px */
+      margin: 0px auto 0px;
+      background: linear-gradient(90deg, #7b4e1d 0%, #a16f39 50%, #7b4e1d 100%);
+      border-radius: 12px 0 0 12px;
+      box-shadow: inset 0 0 15px #5b3c10;
+      user-select: none;
+      box-sizing: content-box;
+      overflow: visible;
+    }
+
+    /* Strings as horizontal lines */
+    #fretboard-container::before {
+      content: "";
+      position: absolute;
+      top: 20px;
+      left: 0;
+      width: 100%;
+      height: 6px;
+      background: repeating-linear-gradient(
+        to bottom,
+        #ccc,
+        #ccc 1px,
+        #444 2px,
+        #444 3px,
+        transparent 4px,
+        transparent 6px
+      );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* We'll create 6 horizontal string lines individually for better control */
+    .string-line {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: linear-gradient(to right, #bbb, #777, #bbb);
+      pointer-events: none;
+      z-index: 2;
+    }
+    /* Position strings top to bottom, with spacing */
+    .string-line.s0 { top: 18px; height: 3px; background: linear-gradient(to right, #ddd, #bbb, #ddd); } /* thinnest string */
+    .string-line.s1 { top: 58px; height: 2px; background: linear-gradient(to right, #ccc, #999, #ccc); }
+    .string-line.s2 { top: 98px; height: 2.5px; background: linear-gradient(to right, #bbb, #888, #bbb); }
+    .string-line.s3 { top: 138px; height: 3px; background: linear-gradient(to right, #aaa, #777, #aaa); }
+    .string-line.s4 { top: 178px; height: 3.5px; background: linear-gradient(to right, #999, #666, #999); }
+    .string-line.s5 { top: 218px; height: 4px; background: linear-gradient(to right, #888, #555, #888); } /* thickest string */
+
+    /* Fret lines as vertical lines */
+    .fret-line {
+      position: absolute;
+      top: 0;
+      height: 240px;
+      width: 3px;
+      background: linear-gradient(to bottom, #eee, #8b5e1e);
+      z-index: 3;
+      box-shadow: 0 0 2px #8b5e1e inset;
+    }
+    /* Nut */
+    .fret-line.nut {
+      left: 0;
+      width: 49.8px;
+      background: #eee;
+      box-shadow: 0 0 8px #fff inset;
+      border-radius: 4px 0 0 4px;
+      z-index: 5;
+    }
+
+    /* Frets 3,5,7,9,12 thicker */
+    .fret-line.fat {
+      width: 4px;
+      background: linear-gradient(to bottom, #ddd, #6f4e1a);
+      box-shadow: 0 0 4px #6f4e1a inset;
+    }
+
+    /* Click zones: transparent, but on hover show highlight and pointer */
+    .click-zone {
+      position: absolute;
+      width: 50px;
+      height: 40px;
+      background: rgba(255 255 255 / 0.15);
+      border-radius: 4px;
+      box-sizing: border-box;
+      cursor: pointer;
+      transition: background-color 0.3s ease, box-shadow 0.3s ease;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+      color: transparent; /* hide text inside squares */
+      user-select: none;
+      font-size: 18px;
+      pointer-events: auto;
+    }
+    .click-zone:hover {
+      background: rgba(255 255 255 / 0.4);
+      box-shadow: 0 0 10px 3px rgba(255 255 255 / 0.7);
+      color: #fff;
+    }
+    .click-zone.correct {
+      background-color: rgba(100, 255, 100, 0.6) !important;
+      box-shadow: 0 0 12px 4px rgba(80, 200, 80, 0.9) !important;
+      color: #0b5100 !important;
+    }
+    .click-zone.incorrect {
+      background-color: rgba(255, 100, 100, 0.6) !important;
+      box-shadow: 0 0 12px 4px rgba(200, 80, 80, 0.9) !important;
+      color: #510000 !important;
+    }
+    .click-zone::before {
+      content: "";
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 20px;
+      height: 20px;
+      border: 2px solid white;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-sizing: border-box;
+      opacity: 0.7;
+    }
+
+    /* Fret numbers below fretboard */
+    #fret-numbers {
+      position: relative;
+      width: 650px;
+      margin: 0 auto 20px;
+      display: flex;
+      justify-content: flex-start;
+      user-select: none;
+      font-weight: bold;
+      color: #3e2609;
+      font-family: monospace;
+      font-size: 14px;
+    }
+    #fret-numbers div {
+      width: 50px;
+      text-align: center;
+      border-top: 2px solid #3e2609;
+      padding-top: 5px;
+      text-shadow: 1px 1px 1px rgba(255 255 255 / 0.7);
+    }
+
+    /* Inlay dots on fret 3,5,7,9,12 */
+    .inlay-dot {
+      position: absolute;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: radial-gradient(circle at center, #eee 30%, #bb9a5b 100%);
+      box-shadow: 0 0 5px #fff inset;
+      left: 0;
+      z-index: 4;
+      pointer-events: none;
+    }
+    /* For single dot frets, vertically center between strings 3 & 4 */
+    .inlay-dot.single {
+      top: 113.5px; /* halfway between string 3 (138) and string 2 (98) approx */
+    }
+    /* For double dot fret 12, two dots aligned between strings 1&2 and 4&5 */
+    .inlay-dot.double-top {
+      top: 73.6px; /* between string 1 and 2 */
+    }
+    .inlay-dot.double-bottom {
+      top: 153.6px; /* between string 4 and 5 */
+    }
+    
+    
+    /* Remove circle for open string zones */
+    .click-zone.open-string::before {
+      content: none;
+    }
+    
+    /* Show string letter inside open string zones */
+    .click-zone.open-string {
+      color: #533 !important;
+      font-weight: bold;
+      font-size: 20px;
+      user-select: none;
+      cursor: default;
+    }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/vexflow@1.2.93/releases/vexflow-min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
@@ -75,8 +255,40 @@
 
 <canvas id="staff" width="300" height="220"></canvas>
 
+<div id="fret-numbers"></div>
 <div id="fretboard-container">
-  <img src="https://i.imgur.com/oZFn26i.png" id="fretboard-image" alt="Fretboard Image" />
+  <!-- String lines -->
+  <div class="string-line s0"></div>
+  <div class="string-line s1"></div>
+  <div class="string-line s2"></div>
+  <div class="string-line s3"></div>
+  <div class="string-line s4"></div>
+  <div class="string-line s5"></div>
+
+  <!-- Fret lines -->
+  <div class="fret-line nut"></div>
+  <div class="fret-line" style="left: 50px;"></div>
+  <div class="fret-line fat" style="left: 150px;"></div>
+  <div class="fret-line" style="left: 100px;"></div>
+  <div class="fret-line fat" style="left: 250px;"></div>
+  <div class="fret-line" style="left: 200px;"></div>
+  <div class="fret-line fat" style="left: 350px;"></div>
+  <div class="fret-line" style="left: 300px;"></div>
+  <div class="fret-line fat" style="left: 450px;"></div>
+  <div class="fret-line" style="left: 400px;"></div>
+  <div class="fret-line fat" style="left: 550px;"></div>
+  <div class="fret-line" style="left: 500px;"></div>
+  <div class="fret-line fat" style="left: 600px;"></div>
+
+  <!-- Inlay dots -->
+  <div class="inlay-dot single" style="left: 168.5px;"></div> <!-- fret 3 -->
+  <div class="inlay-dot single" style="left: 268px;"></div> <!-- fret 5 -->
+  <div class="inlay-dot single" style="left: 368px;"></div> <!-- fret 7 -->
+  <div class="inlay-dot single" style="left: 468.5px;"></div> <!-- fret 9 -->
+
+  <!-- Double dots for fret 12 -->
+  <div class="inlay-dot double-top" style="left: 568.45px;"></div>
+  <div class="inlay-dot double-bottom" style="left: 568.45px;"></div>
 </div>
 
 <p id="feedback"></p>
@@ -84,8 +296,10 @@
 <script>
   const VF = Vex.Flow;
   const stringNotes = ["E4", "B3", "G3", "D3", "A2", "E2"];
+  const stringLetters = ["E", "B", "G", "D", "A", "E"]; // for open strings display
   const notesMap = {};
   const fretboardContainer = document.getElementById("fretboard-container");
+  const fretNumbersDiv = document.getElementById("fret-numbers");
   let currentNote = "";
   let isGameRunning = false;
   let score = 0;
@@ -95,7 +309,6 @@
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   let guitarInstrument = null;
 
-  // Key signature accidentals mapping
   const keyAccidentals = {
     "C": [],
     "G": ["F#"],
@@ -164,40 +377,28 @@
     highSelect.value = noteToMidi("E5");
   }
 
-  function noteToFrequency(note) {
-    const map = { "C": 0, "C#": 1, "D": 2, "D#": 3, "E": 4, "F": 5, "F#": 6, "G": 7, "G#": 8, "A": 9, "A#": 10, "B": 11 };
-    const match = note.match(/^([A-G]#?)(\d)$/);
-    if (!match) return 440;
-    const pitch = match[1];
-    const octave = parseInt(match[2]);
-    const midiNumber = map[pitch] + (octave + 1) * 12;
-    return 440 * Math.pow(2, (midiNumber - 69) / 12);
-  }
+  function playNoteSoundByStringFret(stringIndex, fret) {
+    if (!guitarInstrument) return;
 
-  // Play the note sound based on string index and fret (pitch shifted)
-    function playNoteSoundByStringFret(stringIndex, fret) {
-      if (!guitarInstrument) return;
-    
-      const openStringNote = stringNotes[stringIndex];
-      const midiNumber = noteToMidi(openStringNote) + fret;
-      const noteToPlay = midiToNote(midiNumber);
-    
-      // Play the note and get the audio node
-      const audioNode = guitarInstrument.play(noteToPlay, audioCtx.currentTime, { gain: 1 });
-    
-      // Fade out after 0.8 seconds, stop at 1 second
-      const gainNode = audioNode.output && audioNode.output.gain ? audioNode.output : null;
-      if (gainNode && gainNode.gain) {
-        gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
-        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
-      }
-    
-      setTimeout(() => {
-        if (audioNode && typeof audioNode.stop === 'function') {
-          audioNode.stop();
-        }
-      }, 500);
+    const openStringNote = stringNotes[stringIndex];
+    const midiNumber = noteToMidi(openStringNote) + fret;
+    const noteToPlay = midiToNote(midiNumber);
+
+    const audioNode = guitarInstrument.play(noteToPlay, audioCtx.currentTime, { gain: 1 });
+
+    const gainNode = audioNode.output && audioNode.output.gain ? audioNode.output : null;
+    if (gainNode && gainNode.gain) {
+      gainNode.gain.setValueAtTime
+
+      gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
     }
+
+    setTimeout(() => {
+      if (audioNode && typeof audioNode.stop === 'function') {
+        audioNode.stop();
+      }
+    }, 500);
+  }
 
   function drawNote() {
     const allNotes = Object.values(notesMap);
@@ -239,27 +440,43 @@
     createClickZones();
   }
 
-  function createClickZones() {
-    fretboardContainer.querySelectorAll(".click-zone").forEach(zone => zone.remove());
-    const fretWidth = 50;
-    const stringHeight = 40;
-
-    for (let string = 0; string < 6; string++) {
+    function createClickZones() {
+      fretboardContainer.querySelectorAll(".click-zone").forEach(zone => zone.remove());
+      const fretWidth = 50;
+      const stringHeight = 40;
+    
+      for (let string = 0; string < 6; string++) {
+        for (let fret = 0; fret <= 12; fret++) {
+          if (!notesMap.hasOwnProperty(`${string}-${fret}`)) continue;
+          const div = document.createElement("div");
+          div.className = "click-zone";
+          div.style.left = `${fret * fretWidth}px`;
+          div.style.top = `${string * stringHeight}px`;
+          div.dataset.string = string;
+          div.dataset.fret = fret;
+          div.title = notesMap[`${string}-${fret}`];
+          div.onclick = handleClick;
+    
+          // If this is an open string (fret 0) — show the string letter
+          if (fret === 0) {
+            div.classList.add("open-string");
+            // show the string letter in the center (E, B, G, D, A, E)
+            div.textContent = stringLetters[string];
+          }
+    
+          const isChallengeMode = document.getElementById("challengeModeToggle").checked;
+          div.style.pointerEvents = (isChallengeMode && !isGameRunning) ? 'none' : 'auto';
+          fretboardContainer.appendChild(div);
+        }
+      }
+    
+      fretNumbersDiv.innerHTML = "";
       for (let fret = 0; fret <= 12; fret++) {
-        if (!notesMap.hasOwnProperty(`${string}-${fret}`)) continue;
-        const div = document.createElement("div");
-        div.className = "click-zone";
-        div.style.left = `${fret * fretWidth}px`;
-        div.style.top = `${string * stringHeight}px`;
-        div.dataset.string = string;
-        div.dataset.fret = fret;
-        div.onclick = handleClick;
-        const isChallengeMode = document.getElementById("challengeModeToggle").checked;
-        div.style.pointerEvents = (isChallengeMode && !isGameRunning) ? 'none' : 'auto';
-        fretboardContainer.appendChild(div);
+        const fretNumDiv = document.createElement("div");
+        fretNumDiv.textContent = fret;
+        fretNumbersDiv.appendChild(fretNumDiv);
       }
     }
-  }
 
   function handleClick(e) {
     const { string, fret } = e.target.dataset;
@@ -271,8 +488,6 @@
 
     if (accidentals.length > 0) {
       const baseNote = expectedNote.replace(/[0-9]/g, "");
-      // Adjust expectedNote if baseNote is sharpened or flattened in key signature
-      // This logic assumes accidentals are sharps or flats correctly listed
       if (accidentals.includes(baseNote + "#") || accidentals.includes(baseNote + "b") || accidentals.includes(baseNote)) {
         expectedNote = midiToNote(noteToMidi(expectedNote) + 1);
       }
@@ -288,7 +503,6 @@
         score++;
         document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
       }
-      // Play sound based on the string and fret clicked, so it matches what you hear
       playNoteSoundByStringFret(parseInt(string), parseInt(fret));
       setTimeout(() => {
         drawNote();
@@ -332,7 +546,7 @@
   function toggleChallengeMode() {
     const isChallengeMode = document.getElementById("challengeModeToggle").checked;
     document.body.classList.toggle("challenge-mode", isChallengeMode);
-    
+
     if (!isChallengeMode) {
       isGameRunning = false;
       clearInterval(timerInterval);
