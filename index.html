@@ -18,7 +18,6 @@
     .challenge-mode .challenge-mode-inline { display: inline-block; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/vexflow@1.2.93/releases/vexflow-min.js"></script>
-  <!-- Soundfont‑Player for realistic guitar samples -->
   <script src="https://cdn.jsdelivr.net/npm/soundfont-player@0.12.0/dist/soundfont-player.min.js"></script>
 </head>
 <body>
@@ -34,12 +33,30 @@
   </label>
 </div>
 
-<div>
+<div style="margin-top: 10px;">
   <label>
-    <input type="checkbox" id="accidentalToggle" />
-    Remove accidentals (♯)
+    Key Signature:
+    <select id="keySignature">
+      <option value="C">C Major / A minor</option>
+      <option value="G">G Major / E minor</option>
+      <option value="D">D Major / B minor</option>
+      <option value="A">A Major / F# minor</option>
+      <option value="E">E Major / C# minor</option>
+      <option value="B">B Major / G# minor</option>
+      <option value="F#">F# Major / D# minor</option>
+      <option value="C#">C# Major / A# minor</option>
+      <option value="F">F Major / D minor</option>
+      <option value="Bb">Bb Major / G minor</option>
+      <option value="Eb">Eb Major / C minor</option>
+      <option value="Ab">Ab Major / F minor</option>
+      <option value="Db">Db Major / Bb minor</option>
+      <option value="Gb">Gb Major / Eb minor</option>
+      <option value="Cb">Cb Major / Ab minor</option>
+    </select>
   </label>
-  
+</div>
+
+<div>
   <label style="margin-left: 20px;">
     <input type="checkbox" id="challengeModeToggle" />
     Challenge Mode
@@ -75,12 +92,28 @@
   let timerInterval = null;
   let elapsedTime = 0;
 
-  /* ----------------------------------------------------
-   * REALISTIC GUITAR SOUNDFONT SETUP
-   * --------------------------------------------------*/
   const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   let guitarInstrument = null;
-  // Load once; the promise resolves when samples are ready
+
+  // Key signature accidentals mapping
+  const keyAccidentals = {
+    "C": [],
+    "G": ["F#"],
+    "D": ["F#", "C#"],
+    "A": ["F#", "C#", "G#"],
+    "E": ["F#", "C#", "G#", "D#"],
+    "B": ["F#", "C#", "G#", "D#", "A#"],
+    "F#": ["F#", "C#", "G#", "D#", "A#", "E#"],
+    "C#": ["F#", "C#", "G#", "D#", "A#", "E#", "B#"],
+    "F": ["Bb"],
+    "Bb": ["Bb", "Eb"],
+    "Eb": ["Bb", "Eb", "Ab"],
+    "Ab": ["Bb", "Eb", "Ab", "Db"],
+    "Db": ["Bb", "Eb", "Ab", "Db", "Gb"],
+    "Gb": ["Bb", "Eb", "Ab", "Db", "Gb", "Cb"],
+    "Cb": ["Bb", "Eb", "Ab", "Db", "Gb", "Cb", "Fb"]
+  };
+
   Soundfont.instrument(audioCtx, 'acoustic_guitar_nylon').then(function(inst) {
     guitarInstrument = inst;
   }).catch(console.error);
@@ -119,10 +152,12 @@
 
     for (let midi = noteToMidi("E2"); midi <= noteToMidi("E5"); midi++) {
       const noteName = midiToNote(midi);
-      const optLow = new Option(noteName, midi);
-      const optHigh = new Option(noteName, midi);
-      lowSelect.appendChild(optLow);
-      highSelect.appendChild(optHigh);
+      if (isNatural(noteName)) {
+        const optLow = new Option(noteName, midi);
+        const optHigh = new Option(noteName, midi);
+        lowSelect.appendChild(optLow);
+        highSelect.appendChild(optHigh);
+      }
     }
 
     lowSelect.value = noteToMidi("E2");
@@ -139,57 +174,40 @@
     return 440 * Math.pow(2, (midiNumber - 69) / 12);
   }
 
-  // Plays a realistic guitar pluck if the soundfont has loaded; otherwise falls back to sine tone
-    function playNoteSound(note) {
-      if (guitarInstrument) {
-        const now = audioCtx.currentTime;
-        const duration = 1.0;
-        const audioNode = guitarInstrument.play(note, now, { gain: 1 });
+  // Play the note sound based on string index and fret (pitch shifted)
+    function playNoteSoundByStringFret(stringIndex, fret) {
+      if (!guitarInstrument) return;
     
-        // Schedule manual fade-out
-        const gainNode = audioNode.output && audioNode.output.gain ? audioNode.output : null;
-        if (gainNode && gainNode.gain) {
-          gainNode.gain.setValueAtTime(1, now);
-          gainNode.gain.exponentialRampToValueAtTime(0.001, now + duration);
-        }
+      const openStringNote = stringNotes[stringIndex];
+      const midiNumber = noteToMidi(openStringNote) + fret;
+      const noteToPlay = midiToNote(midiNumber);
     
-        // Optional hard stop fallback
-        setTimeout(() => {
-          if (audioNode && typeof audioNode.stop === 'function') {
-            audioNode.stop();
-          }
-        }, duration * 400);
-      } else {
-        // fallback sine tone
-        const freq = noteToFrequency(note);
-        const osc = audioCtx.createOscillator();
-        const gain = audioCtx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
-        osc.connect(gain);
-        gain.connect(audioCtx.destination);
-        gain.gain.setValueAtTime(1, audioCtx.currentTime);
-        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 1.0);
-        osc.start();
-        osc.stop(audioCtx.currentTime + 1.0);
+      // Play the note and get the audio node
+      const audioNode = guitarInstrument.play(noteToPlay, audioCtx.currentTime, { gain: 1 });
+    
+      // Fade out after 0.8 seconds, stop at 1 second
+      const gainNode = audioNode.output && audioNode.output.gain ? audioNode.output : null;
+      if (gainNode && gainNode.gain) {
+        gainNode.gain.setValueAtTime(1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
       }
+    
+      setTimeout(() => {
+        if (audioNode && typeof audioNode.stop === 'function') {
+          audioNode.stop();
+        }
+      }, 600);
     }
 
   function drawNote() {
-    const removeAccidentals = document.getElementById("accidentalToggle").checked;
     const allNotes = Object.values(notesMap);
-
     const lowMidi = parseInt(document.getElementById("lowNote").value);
     const highMidi = parseInt(document.getElementById("highNote").value);
 
     let filteredNotes = allNotes.filter(n => {
       const midi = noteToMidi(n);
-      return midi >= lowMidi && midi <= highMidi;
+      return midi >= lowMidi && midi <= highMidi && isNatural(n);
     });
-
-    if (removeAccidentals) {
-      filteredNotes = filteredNotes.filter(n => isNatural(n));
-    }
 
     if (filteredNotes.length === 0) {
       document.getElementById("feedback").textContent = "No notes available in this range!";
@@ -197,16 +215,19 @@
     }
 
     currentNote = filteredNotes[Math.floor(Math.random() * filteredNotes.length)];
-
     const canvas = document.getElementById("staff");
     const ctx = canvas.getContext("2d");
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const renderer = new VF.Renderer(canvas, VF.Renderer.Backends.CANVAS);
     const stave = new VF.Stave(10, 70, 280);
-    stave.addClef("treble").setContext(ctx).draw();
+    stave.addClef("treble");
 
-    const midi = noteToMidi(currentNote) + 12; // shift octave for notation clarity
+    const selectedKey = document.getElementById("keySignature").value;
+    stave.addKeySignature(selectedKey);
+    stave.setContext(ctx).draw();
+
+    const midi = noteToMidi(currentNote) + 12;
     const noteName = midiToNote(midi);
     const staveNote = new VF.StaveNote({
       clef: "treble",
@@ -214,11 +235,7 @@
       duration: "q"
     });
 
-    if (noteName.includes("#")) {
-      staveNote.addAccidental(0, new VF.Accidental("#"));
-    }
     VF.Formatter.FormatAndDraw(ctx, stave, [staveNote]);
-
     createClickZones();
   }
 
@@ -234,16 +251,11 @@
         div.className = "click-zone";
         div.style.left = `${fret * fretWidth}px`;
         div.style.top = `${string * stringHeight}px`;
-        div.style.width = `${fretWidth}px`;
-        div.style.height = `${stringHeight}px`;
         div.dataset.string = string;
         div.dataset.fret = fret;
         div.onclick = handleClick;
-        
-        // Enable clicking only if in challenge mode and game is running, or not in challenge mode
         const isChallengeMode = document.getElementById("challengeModeToggle").checked;
         div.style.pointerEvents = (isChallengeMode && !isGameRunning) ? 'none' : 'auto';
-        
         fretboardContainer.appendChild(div);
       }
     }
@@ -252,7 +264,21 @@
   function handleClick(e) {
     const { string, fret } = e.target.dataset;
     const clickedNote = notesMap[`${string}-${fret}`];
-    const isCorrect = clickedNote === currentNote;
+
+    let expectedNote = currentNote;
+    const selectedKey = document.getElementById("keySignature").value;
+    const accidentals = keyAccidentals[selectedKey];
+
+    if (accidentals.length > 0) {
+      const baseNote = expectedNote.replace(/[0-9]/g, "");
+      // Adjust expectedNote if baseNote is sharpened or flattened in key signature
+      // This logic assumes accidentals are sharps or flats correctly listed
+      if (accidentals.includes(baseNote + "#") || accidentals.includes(baseNote + "b") || accidentals.includes(baseNote)) {
+        expectedNote = midiToNote(noteToMidi(expectedNote) + 1);
+      }
+    }
+
+    const isCorrect = clickedNote === expectedNote;
     const isChallengeMode = document.getElementById("challengeModeToggle").checked;
 
     e.target.classList.add(isCorrect ? "correct" : "incorrect");
@@ -262,7 +288,8 @@
         score++;
         document.getElementById("scoreDisplay").textContent = `Score: ${score}`;
       }
-      playNoteSound(currentNote);
+      // Play sound based on the string and fret clicked, so it matches what you hear
+      playNoteSoundByStringFret(parseInt(string), parseInt(fret));
       setTimeout(() => {
         drawNote();
         createClickZones();
@@ -270,7 +297,7 @@
     } else {
       if (isChallengeMode) {
         document.getElementById("feedback").innerHTML =
-          `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${currentNote}</strong>`;
+          `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${expectedNote}</strong>`;
         endGame();
       } else {
         document.getElementById("feedback").textContent = "";
@@ -307,13 +334,11 @@
     document.body.classList.toggle("challenge-mode", isChallengeMode);
     
     if (!isChallengeMode) {
-      // Reset game state when turning off challenge mode
       isGameRunning = false;
       clearInterval(timerInterval);
       document.getElementById("feedback").textContent = "";
       createClickZones();
     } else {
-      // Reset score and timer when turning on challenge mode
       score = 0;
       elapsedTime = 0;
       document.getElementById("scoreDisplay").textContent = "Score: 0";
@@ -322,9 +347,9 @@
     drawNote();
   }
 
-  document.getElementById("accidentalToggle").addEventListener("change", drawNote);
   document.getElementById("lowNote").addEventListener("change", drawNote);
   document.getElementById("highNote").addEventListener("change", drawNote);
+  document.getElementById("keySignature").addEventListener("change", drawNote);
   document.getElementById("challengeModeToggle").addEventListener("change", toggleChallengeMode);
   document.getElementById("startBtn").addEventListener("click", startGame);
   document.getElementById("stopBtn").addEventListener("click", endGame);
