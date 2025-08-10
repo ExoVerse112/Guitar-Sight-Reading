@@ -108,8 +108,8 @@
       pointer-events: auto;
     }
     .click-zone:hover {
-      background: rgba(255 255 255 / 0.4);
-      box-shadow: 0 0 10px 3px rgba(255 255 255 / 0.7);
+      background: rgba(255, 215, 0, 0.6); /* warm gold */
+      box-shadow: 0 0 10px 3px rgba(255, 215, 0, 0.8);
       color: #fff;
     }
     .click-zone.correct {
@@ -397,7 +397,7 @@
       if (audioNode && typeof audioNode.stop === 'function') {
         audioNode.stop();
       }
-    }, 500);
+    }, 400);
   }
 
   function drawNote() {
@@ -510,8 +510,11 @@
       }, 60);
     } else {
       if (isChallengeMode) {
+        const clickedLetter = clickedNote.replace(/[0-9]/g, "");
+        const expectedLetter = expectedNote.replace(/[0-9]/g, "");
+        
         document.getElementById("feedback").innerHTML =
-          `❌ That was <strong>${clickedNote}</strong><br>✅ Correct answer: <strong>${expectedNote}</strong>`;
+          `❌ You picked: <strong>${clickedLetter}</strong><br>✅ Correct answer: <strong>${expectedLetter}</strong>`;
         endGame();
       } else {
         document.getElementById("feedback").textContent = "";
